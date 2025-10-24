@@ -1,6 +1,7 @@
 import telebot
 import requests
 import os
+import time
 from dotenv import load_dotenv
 
 # Загружаем переменные из .env (если есть)
@@ -47,7 +48,13 @@ def handle_message(message):
     except Exception as e:
         bot.reply_to(message, f"⚠️ Ошибка: {e}")
 
-# 🚀 Запуск
+# 🚀 Запуск с автоперезапуском
 if __name__ == "__main__":
-    print("✅ Бот запущен и работает 24/7...")
-    bot.polling(non_stop=True)
+    while True:
+        try:
+            print("✅ Бот запущен и работает 24/7...")
+            bot.polling(non_stop=True, interval=0, timeout=60)
+        except Exception as e:
+            print(f"⚠️ Ошибка: {e}. Перезапуск через 5 секунд...")
+            time.sleep(5)
+
