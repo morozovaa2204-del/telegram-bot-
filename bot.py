@@ -13,7 +13,7 @@ OPENAI_KEY = os.getenv("OPENAI_KEY")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 🧠 Текстовый ответ ChatGPT
+# 🧠 ChatGPT: текстовые ответы
 def ask_chatgpt(message_text):
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -36,18 +36,22 @@ def ask_chatgpt(message_text):
     except Exception as e:
         return f"⚠️ Ошибка при обращении к OpenAI: {e}"
 
-# 🧩 Обработка фото (ИИ-фотошоп)
+# 📸 ИИ-обработка фото
 def process_image_with_ai(image_bytes):
-    url = "https://api.openai.com/v1/images/edits"
-    headers = {"Authorization": f"Bearer {OPENAI_KEY}"}
-    files = {"image": ("photo.png", image_bytes)}
+    url = "https://api.openai.com/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_KEY}"
+    }
+    files = {
+        "image": ("photo.png", image_bytes)
+    }
     data = {
-        "model": "gpt-4o-mini",
-        "prompt": "улучши фото, сделай лицо чётким, кожу естественной, фон нейтральным и красивым"
+        "model": "gpt-image-1",
+        "prompt": "Сделай фото четким, улучшенным, с ровной кожей, нейтральным фоном и естественным освещением."
     }
 
     try:
-        response = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=90)
         response.raise_for_status()
         result = response.json()
         return result["data"][0]["url"]
@@ -57,7 +61,7 @@ def process_image_with_ai(image_bytes):
 # 🟢 Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "👋 Привет! Я ИИ-бот. Отправь фото или текст — и я помогу 📸🤖")
+    bot.reply_to(message, "👋 Привет! Я ИИ-бот Анны. Отправь фото — я обработаю его с помощью искусственного интеллекта 🤖✨")
 
 # 💬 Обработка текста
 @bot.message_handler(content_types=['text'])
@@ -78,13 +82,13 @@ def handle_photo(message):
         result_url = process_image_with_ai(downloaded_file)
 
         if isinstance(result_url, str) and result_url.startswith("http"):
-            bot.send_photo(message.chat.id, result_url, caption="Вот готовое фото ✨")
+            bot.send_photo(message.chat.id, result_url, caption="Вот улучшенная версия твоего фото 🌟")
         else:
             bot.reply_to(message, result_url)
     except Exception as e:
         bot.reply_to(message, f"⚠️ Ошибка при загрузке фото: {e}")
 
-# 🔁 Автоматический перезапуск при сбое
+# 🔁 Перезапуск при сбое
 def run_bot():
     while True:
         try:
