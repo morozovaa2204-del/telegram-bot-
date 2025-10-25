@@ -1,64 +1,63 @@
-import os
-import requests
 import telebot
+import requests
+import os
 from dotenv import load_dotenv
 
-# Загружаем ключи из .env
+# Загружаем токены из .env
 load_dotenv()
-
-# 🔑 Твои ключи
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 
-# Проверка, что ключи есть
-if not TELEGRAM_TOKEN:
-    raise SystemExit("❌ Ошибка: TELEGRAM_TOKEN не найден. Добавь его в .env")
-if not OPENAI_KEY:
-    raise SystemExit("❌ Ошибка: OPENAI_KEY не найден. Добавь его в .env")
-
-# Инициализация бота
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 💬 Функция общения с ChatGPT (через API)
-def ask_chatgpt(message_text):
-    url = "https://api.openai.com/v1/chat/completions"
+# 🧠 Функция для ИИ обработки изображения
+def ai_edit_image(image_path):
+    url = "https://api.openai.com/v1/images/edits"
     headers = {
-        "Authorization": f"Bearer {OPENAI_KEY}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {OPENAI_KEY}"
+    }
+    files = {
+        "image": open(image_path, "rb"),
+        "mask": open(image_path, "rb")  # можно использовать ту же картинку
     }
     data = {
-        "model": "gpt-3.5-turbo",  # ✅ стабильная модель, работает у всех
-        "messages": [
-            {"role": "system", "content": "Ты дружелюбный и умный помощник."},
-            {"role": "user", "content": message_text}
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.8
+        "model": "gpt-image-1",
+        "prompt": "улучшить качество изображения, осветлить, сделать лицо красивее и фон мягче"
     }
 
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 401:
-        raise Exception("Ошибка 401 — неверный OpenAI API ключ. Проверь .env файл.")
+    response = requests.post(url, headers=headers, files=files, data=data)
     response.raise_for_status()
     result = response.json()
-    return result["choices"][0]["message"]["content"].strip()
+    image_url = result["data"][0]["url"]
+    return image_url
 
 # 🟢 Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "Привет 👋 Я твой AI-помощник! Напиши мне сообщение, и я отвечу как ChatGPT 😊")
+    bot.reply_to(message, "👋 Привет! Отправь мне фотографию, и я улучшю её с помощью ИИ ✨")
 
-# 💬 Обработка всех сообщений
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
+# 📸 Приём фотографий
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
     try:
-        bot.send_chat_action(message.chat.id, 'typing')
-        answer = ask_chatgpt(message.text)
-        bot.reply_to(message, answer)
+        bot.send_chat_action(message.chat.id, 'upload_photo')
+        file_info = bot.get_file(message.photo[-1].file_id)
+        file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
+        img_data = requests.get(file_url).content
+
+        img_path = "input.jpg"
+        with open(img_path, "wb") as f:
+            f.write(img_data)
+
+        bot.reply_to(message, "🧠 Обрабатываю фото... подожди немного ☁️")
+
+        result_url = ai_edit_image(img_path)
+        bot.send_photo(message.chat.id, result_url, caption="✨ Вот улучшенная версия твоего фото!")
+
     except Exception as e:
-        bot.reply_to(message, f"⚠️ Ошибка: {e}")
+        bot.reply_to(message, f"⚠️ Ошибка при обработке: {e}")
 
 # 🚀 Запуск
 if __name__ == "__main__":
-    print("✅ Бот запущен и работает 24/7...")
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    print("✅ Бот запущен и готов улучшать фотографии!")
+    bot.polling(non_stop=True)
