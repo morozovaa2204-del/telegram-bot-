@@ -2,6 +2,7 @@ import telebot
 import requests
 import os
 import time
+import base64
 from dotenv import load_dotenv
 
 # Загружаем переменные из .env
@@ -36,22 +37,25 @@ def ask_chatgpt(message_text):
     except Exception as e:
         return f"⚠️ Ошибка при обращении к OpenAI: {e}"
 
-# 📸 ИИ-обработка фото
+# 📸 ИИ-обработка фото через gpt-image-1
 def process_image_with_ai(image_bytes):
-    url = "https://api.openai.com/v1/images/generations"
+    url = "https://api.openai.com/v1/images/edits"
     headers = {
-        "Authorization": f"Bearer {OPENAI_KEY}"
+        "Authorization": f"Bearer {OPENAI_KEY}",
+        "Content-Type": "application/json"
     }
-    files = {
-        "image": ("photo.png", image_bytes)
-    }
+
+    # Конвертируем фото в base64
+    encoded_image = base64.b64encode(image_bytes).decode("utf-8")
+
     data = {
         "model": "gpt-image-1",
-        "prompt": "Сделай фото четким, улучшенным, с ровной кожей, нейтральным фоном и естественным освещением."
+        "image": encoded_image,
+        "prompt": "Улучшить качество фотографии: осветлить, выровнять кожу, сделать фото более профессиональным, сохранить естественность."
     }
 
     try:
-        response = requests.post(url, headers=headers, files=files, data=data, timeout=90)
+        response = requests.post(url, headers=headers, json=data, timeout=90)
         response.raise_for_status()
         result = response.json()
         return result["data"][0]["url"]
