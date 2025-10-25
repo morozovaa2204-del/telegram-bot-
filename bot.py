@@ -10,7 +10,12 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 
-# Инициализация клиентов
+# Проверяем, что ключи подгрузились
+if not TELEGRAM_TOKEN or not OPENAI_KEY:
+    print("❌ Ошибка: не найден TELEGRAM_TOKEN или OPENAI_KEY в .env файле.")
+    exit()
+
+# Инициализация бота и клиента OpenAI
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = OpenAI(api_key=OPENAI_KEY)
 
@@ -19,21 +24,20 @@ client = OpenAI(api_key=OPENAI_KEY)
 def start(message):
     bot.send_message(
         message.chat.id,
-        "👋 Привет! Я — ИИ бот. Отправь мне текст или фото, и я помогу обработать или улучшить изображение!"
+        "👋 Привет! Я — ИИ бот. Отправь мне сообщение или фото, и я помогу тебе обработать или улучшить изображение!"
     )
 
 # Обработка текстовых сообщений
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     prompt = message.text.strip()
-
     bot.send_message(message.chat.id, "💭 Думаю над ответом...")
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Ты — умный и дружелюбный Telegram-бот, помогающий пользователю."},
+                {"role": "system", "content": "Ты — доброжелательный Telegram-бот, который помогает пользователю."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -44,7 +48,7 @@ def handle_text(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"⚠️ Ошибка при ответе: {e}")
 
-# Обработка изображений
+# Обработка фотографий
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     try:
@@ -57,14 +61,15 @@ def handle_photo(message):
         with open("image.png", 'wb') as new_file:
             new_file.write(downloaded_file)
 
-        # Отправляем фото в OpenAI для обработки (улучшение)
+        # Отправляем фото в OpenAI для улучшения
         with open("image.png", "rb") as image_file:
             result = client.images.edits(
                 model="gpt-image-1",
                 image=image_file,
-                prompt="улучши качество, сделай лицо естественным и освещение мягким"
+                prompt="улучши качество, осветли лицо, убери тени и сделай мягкое освещение"
             )
 
+        # Получаем ссылку на улучшенное фото
         image_url = result.data[0].url
         bot.send_message(message.chat.id, f"✅ Готово! Вот улучшенное фото:\n{image_url}")
 
@@ -74,4 +79,4 @@ def handle_photo(message):
 # Запуск бота
 if __name__ == "__main__":
     print("🤖 Бот запущен и работает...")
-    bot.polling(none_stop=True)
+    bot.polling(none_stop=True, interval=0)
