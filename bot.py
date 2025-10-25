@@ -1,74 +1,59 @@
 import telebot
 import requests
 import os
-import time
 from dotenv import load_dotenv
 
-# Загружаем токены
+# Загружаем переменные из .env
 load_dotenv()
+
+# 🔑 Твои ключи
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# 🧠 Функция обработки изображения через OpenAI
-def ai_edit_image(image_path):
-    url = "https://api.openai.com/v1/images/edits"
+# 🧠 Функция для запросов к OpenAI
+def ask_chatgpt(message_text):
+    url = "https://api.openai.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {OPENAI_KEY}"
-    }
-    files = {
-        "image": open(image_path, "rb"),
-        "mask": open(image_path, "rb")
+        "Authorization": f"Bearer {OPENAI_KEY}",
+        "Content-Type": "application/json"
     }
     data = {
-        "model": "gpt-image-1",
-        "prompt": "улучшить качество, осветлить, сделать лицо красивее и фон мягче"
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": "Ты дружелюбный помощник, который помогает людям."},
+            {"role": "user", "content": message_text}
+        ]
     }
 
-    response = requests.post(url, headers=headers, files=files, data=data)
-    response.raise_for_status()
-    result = response.json()
-    return result["data"][0]["url"]
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response.raise_for_status()
+        result = response.json()
+        return result["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        return f"⚠️ Ошибка при обращении к OpenAI: {e}"
 
 # 🟢 Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "👋 Привет! Отправь мне фото — я улучшу его с помощью ИИ ✨")
+    bot.reply_to(message, "👋 Привет! Я твой AI-бот. Отправь мне фото или сообщение — и я помогу!")
 
-# 📸 Приём фото
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
+# 💬 Обработка текстовых сообщений
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_message(message):
     try:
-        bot.send_chat_action(message.chat.id, 'upload_photo')
-        file_info = bot.get_file(message.photo[-1].file_id)
-        file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-        img_data = requests.get(file_url).content
-
-        img_path = "input.jpg"
-        with open(img_path, "wb") as f:
-            f.write(img_data)
-
-        bot.reply_to(message, "🧠 Обрабатываю фото, подожди немного ☁️")
-        result_url = ai_edit_image(img_path)
-        bot.send_photo(message.chat.id, result_url, caption="✨ Вот улучшенная версия твоего фото!")
-
+        bot.send_chat_action(message.chat.id, 'typing')
+        reply = ask_chatgpt(message.text)
+        bot.reply_to(message, reply)
     except Exception as e:
-        bot.reply_to(message, f"⚠️ Ошибка при обработке: {e}")
+        bot.reply_to(message, f"⚠️ Ошибка: {e}")
 
-# 🚀 Безопасный запуск
+# 🧷 Защита от двойного запуска
 if __name__ == "__main__":
-    print("✅ Бот запущен (с защитой от двойного запуска)")
-
-    while True:
-        try:
-            bot.polling(non_stop=True, interval=1, timeout=30)
-        except Exception as e:
-            # Если ошибка 409 — просто ждём и пробуем снова
-            if "Conflict: terminated by other getUpdates request" in str(e):
-                print("⚠️ Обнаружен второй экземпляр бота. Ожидание 15 сек...")
-                time.sleep(15)
-                continue
-            else:
-                print(f"🚨 Ошибка: {e}")
-                time.sleep(10)
+    print("✅ Бот запущен и работает 24/7...")
+    try:
+        bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    except Exception as e:
+        print(f"⚠️ Бот остановлен из-за ошибки: {e}")
