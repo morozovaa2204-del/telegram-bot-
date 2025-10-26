@@ -6,60 +6,56 @@ from openai import OpenAI
 # Загружаем .env
 load_dotenv()
 
-# Загружаем токены
+# Удаляем системные прокси, чтобы Render не ломал клиента
+for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]:
+    if var in os.environ:
+        del os.environ[var]
+
+# Ключи
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 
-# Проверяем ключи
+# Проверка
 if not TELEGRAM_TOKEN or not OPENAI_KEY:
     print("❌ Ошибка: не найден TELEGRAM_TOKEN или OPENAI_KEY")
     exit()
 
-# Инициализация клиентов
+# Клиенты
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = OpenAI(api_key=OPENAI_KEY)  # Без аргумента proxy!
+client = OpenAI(api_key=OPENAI_KEY)
 
-# Сохраняем текст запроса пользователя
+# Храним последний текст запроса
 user_prompts = {}
 
-# Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(
         message.chat.id,
-        "👋 Привет! Я — ИИ-бот для редактирования фото.\n"
-        "Отправь мне текст и фото, и я улучшу изображение с помощью нейросети 💫\n\n"
-        "Напиши, например:\n"
-        "— Сделай кожу гладкой\n"
-        "— Замени фон на море\n"
-        "— Улучши освещение"
+        "👋 Привет! Я умею улучшать фотографии с помощью ИИ.\n"
+        "Отправь текст и фото — и я всё сделаю!\n\n"
+        "Например:\n"
+        "— Убери фон\n"
+        "— Сделай кожу мягче\n"
+        "— Осветли фото"
     )
 
-# Текст от пользователя
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     user_prompts[message.chat.id] = message.text.strip()
-    bot.send_message(message.chat.id, "📸 Теперь отправь фото для обработки.")
+    bot.send_message(message.chat.id, "📸 Теперь отправь фото для обработки!")
 
-# Фото от пользователя
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     try:
-        prompt = user_prompts.get(
-            message.chat.id,
-            "улучши качество фото, сделай свет мягче и убери тени"
-        )
-
+        prompt = user_prompts.get(message.chat.id, "улучши качество изображения")
         bot.send_message(message.chat.id, f"✨ Обрабатываю фото...\n🪄 Запрос: {prompt}")
 
-        # Скачиваем фото
         file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
+        downloaded = bot.download_file(file_info.file_path)
 
-        with open("photo.png", "wb") as new_file:
-            new_file.write(downloaded_file)
+        with open("photo.png", "wb") as f:
+            f.write(downloaded)
 
-        # Отправляем в OpenAI
         with open("photo.png", "rb") as image_file:
             result = client.images.edits(
                 model="gpt-image-1",
@@ -69,13 +65,12 @@ def handle_photo(message):
             )
 
         image_url = result.data[0].url
-        bot.send_message(message.chat.id, f"✅ Готово! Вот улучшенное фото:\n{image_url}")
+        bot.send_message(message.chat.id, f"✅ Готово! Вот результат:\n{image_url}")
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"⚠️ Ошибка: {e}")
-        print(f"Ошибка при обработке: {e}")
+        bot.send_message(message.chat.id, f"⚠️ Ошибка при обработке: {e}")
+        print(f"Ошибка: {e}")
 
-# Запуск
 if __name__ == "__main__":
     print("🤖 Бот запущен без прокси, Render готов 🚀")
     bot.polling(none_stop=True, interval=0)
