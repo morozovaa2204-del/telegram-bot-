@@ -1,71 +1,94 @@
-import telebot
-import requests
-from openai import OpenAI
 import os
-from dotenv import load_dotenv
+import telebot
 from telebot import types
+from openai import OpenAI
+from dotenv import load_dotenv
+import requests
 
-# Загружаем .env
+# Загружаем переменные окружения (.env)
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+# Проверяем, есть ли ключи
 if not OPENAI_API_KEY or not TELEGRAM_BOT_TOKEN:
-    raise ValueError("Ошибка: не найден OPENAI_API_KEY или TELEGRAM_BOT_TOKEN!")
+    raise ValueError("Ошибка: не найден TELEGRAM_BOT_TOKEN или OPENAI_API_KEY в .env")
 
-# Подключаем OpenAI и Telegram
+# Инициализация клиентов
 client = OpenAI(api_key=OPENAI_API_KEY)
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-# Счётчик бесплатных фото
-user_free_photos = {}
+# Память для учёта бесплатных обработок
+user_free_used = {}
 
+# Приветствие
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Привет! 🌸 Отправь мне фото — я обработаю его для тебя с помощью ИИ ✨")
+    bot.reply_to(
+        message,
+        "✨ Привет! Я — твой ИИ-фоторедактор.\n"
+        "Отправь мне фото, и я сделаю его волшебным 💫\n"
+        "Первая обработка — БЕСПЛАТНО 🎁"
+    )
 
+# Сообщение с текстом "привет" или любое другое
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_text(message):
+    if message.text.lower() in ["привет", "hi", "hello"]:
+        bot.send_message(message.chat.id, "Теперь отправь фото для обработки ✨")
+    else:
+        bot.send_message(message.chat.id, "Отправь фото, и я улучшу его! 📸")
+
+# Обработка фото
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     user_id = message.from_user.id
-    chat_id = message.chat.id
 
-    # Проверяем, использовал ли пользователь бесплатную обработку
-    if user_free_photos.get(user_id, 0) >= 1:
+    # Проверяем — использовал ли уже бесплатную обработку
+    if user_free_used.get(user_id):
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("💎 Разблокировать магию", url="https://kaspi.kz"))
-        bot.send_message(
-            chat_id,
-            "✨ Ты уже использовал бесплатную обработку!\n"
-            "Разблокируй безлимитную магию фото 💫 — всего 500₸.",
+        btn = types.InlineKeyboardButton(
+            "💎 Разблокировать магию (Kaspi / Qiwi / USDT)",
+            url="https://t.me/morozovaa2204"  # сюда поставь ссылку для связи / оплаты
+        )
+        markup.add(btn)
+        bot.reply_to(
+            message,
+            "✨ Бесплатная обработка уже использована.\n"
+            "Чтобы продолжить — разблокируй магию 💫",
             reply_markup=markup
         )
         return
 
-    bot.reply_to(message, "✨ Обрабатываю твоё фото... подожди немного 💫")
+    # Отмечаем, что бесплатная обработка использована
+    user_free_used[user_id] = True
 
-    # Получаем файл
-    file_id = message.photo[-1].file_id
-    file_info = bot.get_file(file_id)
-    file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_info.file_path}"
-    response = requests.get(file_url)
+    # Загружаем фото
+    try:
+        file_info = bot.get_file(message.photo[-1].file_id)
+        photo_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_info.file_path}"
+        bot.send_message(message.chat.id, "🔮 Обрабатываю фото... Подожди немного 💫")
 
-    # Отправляем в OpenAI для улучшения
-    result = client.images.edit(
-        model="gpt-image-1",
-        image=response.content,
-        prompt="Улучшить качество, сделать мягкий свет и лёгкий гламурный стиль, сохранить естественность"
-    )
+        # Отправляем фото в OpenAI для улучшения
+        response = client.images.edit(
+            model="gpt-image-1",
+            image=photo_url,
+            prompt="улучши качество фото, убери шум, сделай кожу мягче, ярче фон"
+        )
 
-    # Получаем ссылку
-    image_url = result.data[0].url
+        # Получаем URL результата
+        if response.data and len(response.data) > 0:
+            image_url = response.data[0].url
+            bot.send_photo(message.chat.id, image_url, caption="✨ Готово! Вот улучшенное фото 💖")
+        else:
+            bot.send_message(message.chat.id, "❌ Не удалось получить улучшенное фото. Попробуй позже.")
 
-    # Отправляем пользователю
-    bot.send_photo(chat_id, image_url, caption="💖 Готово! Вот твоё улучшенное фото 🌸")
+    except Exception as e:
+        print("Ошибка при обработке фото:", e)
+        bot.send_message(message.chat.id, "😔 Произошла ошибка при обработке фото. Попробуй позже!")
 
-    # Отмечаем, что пользователь использовал бесплатное фото
-    user_free_photos[user_id] = user_free_photos.get(user_id, 0) + 1
-
-# Запуск
-print("✅ Бот запущен и готов к магии!")
-bot.polling(none_stop=True)
+# Запуск бота
+if __name__ == "__main__":
+    print("✅ Бот запущен и готов к работе!")
+    bot.polling(none_stop=True)
