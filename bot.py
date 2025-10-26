@@ -57,7 +57,7 @@ def handle_photo(message):
         with open("photo.png", "wb") as f:
             f.write(downloaded)
 
-        # Отправляем запрос в OpenAI (новый синтаксис!)
+        # Отправляем запрос в OpenAI
         with open("photo.png", "rb") as image:
             response = openai.images.edits(
                 model="gpt-image-1",
@@ -66,4 +66,14 @@ def handle_photo(message):
                 size="1024x1024"
             )
 
-        # Получаем URL резуль
+        # Получаем URL результата
+        image_url = response.data[0].url
+        bot.send_message(message.chat.id, f"✅ Готово! Вот твое фото:\n{image_url}")
+
+    except Exception as e:
+        bot.send_message(message.chat.id, f"⚠️ Ошибка при обработке: {e}")
+        print(f"Ошибка: {e}")
+
+if __name__ == "__main__":
+    print("🤖 Бот успешно запущен без прокси и работает через OpenAI API 🚀")
+    bot.polling(none_stop=True)
