@@ -1,133 +1,71 @@
-import os
-import io
-import json
+import telebot
 import requests
-from dotenv import load_dotenv
 from openai import OpenAI
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import os
+from dotenv import load_dotenv
+from telebot import types
 
-# 🧩 Загрузка переменных окружения
+# Загружаем .env
 load_dotenv()
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-if not BOT_TOKEN or not OPENAI_KEY:
-    raise ValueError("❌ Ошибка: не найден TELEGRAM_BOT_TOKEN или OPENAI_API_KEY в .env")
+if not OPENAI_API_KEY or not TELEGRAM_BOT_TOKEN:
+    raise ValueError("Ошибка: не найден OPENAI_API_KEY или TELEGRAM_BOT_TOKEN!")
 
-# 🧠 Инициализация OpenAI клиента
-client = OpenAI(api_key=OPENAI_KEY)
+# Подключаем OpenAI и Telegram
+client = OpenAI(api_key=OPENAI_API_KEY)
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-# 📂 Файл для хранения пользователей
-USERS_FILE = "users.json"
+# Счётчик бесплатных фото
+user_free_photos = {}
 
-# Загружаем или создаём базу пользователей
-if os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        users = json.load(f)
-else:
-    users = {}
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    bot.reply_to(message, "Привет! 🌸 Отправь мне фото — я обработаю его для тебя с помощью ИИ ✨")
 
-def save_users():
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=4)
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
 
-# 🚀 Команда /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    user_name = update.message.from_user.first_name
+    # Проверяем, использовал ли пользователь бесплатную обработку
+    if user_free_photos.get(user_id, 0) >= 1:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("💎 Разблокировать магию", url="https://kaspi.kz"))
+        bot.send_message(
+            chat_id,
+            "✨ Ты уже использовал бесплатную обработку!\n"
+            "Разблокируй безлимитную магию фото 💫 — всего 500₸.",
+            reply_markup=markup
+        )
+        return
 
-    if user_id not in users:
-        users[user_id] = {"free_used": False}
-        save_users()
+    bot.reply_to(message, "✨ Обрабатываю твоё фото... подожди немного 💫")
 
-    text = (
-        f"👋 Привет, {user_name}!\n\n"
-        "Я — твой ИИ-фотохудожник 🎨✨\n"
-        "Я умею улучшать, раскрашивать и преображать твои фотографии с помощью искусственного интеллекта.\n\n"
-        "📸 Отправь мне своё первое фото — и я обработаю его *бесплатно!*"
+    # Получаем файл
+    file_id = message.photo[-1].file_id
+    file_info = bot.get_file(file_id)
+    file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_info.file_path}"
+    response = requests.get(file_url)
+
+    # Отправляем в OpenAI для улучшения
+    result = client.images.edit(
+        model="gpt-image-1",
+        image=response.content,
+        prompt="Улучшить качество, сделать мягкий свет и лёгкий гламурный стиль, сохранить естественность"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
 
-# 💬 Обработка текстов
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
-    await update.message.chat.send_action(action="typing")
+    # Получаем ссылку
+    image_url = result.data[0].url
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Ты умный и вежливый ассистент."},
-                {"role": "user", "content": user_message},
-            ],
-        )
-        reply = response.choices[0].message.content
-        await update.message.reply_text(reply)
+    # Отправляем пользователю
+    bot.send_photo(chat_id, image_url, caption="💖 Готово! Вот твоё улучшенное фото 🌸")
 
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ Ошибка: {e}")
+    # Отмечаем, что пользователь использовал бесплатное фото
+    user_free_photos[user_id] = user_free_photos.get(user_id, 0) + 1
 
-# 🖼️ Обработка фотографий
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    user = users.get(user_id, {"free_used": False})
-
-    try:
-        photo = update.message.photo[-1]
-        file = await photo.get_file()
-        file_path = file.file_path
-
-        await update.message.reply_text("✨ Обрабатываю твоё фото, подожди немного...")
-
-        # ИИ-обработка через OpenAI
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Ты ИИ-фоторедактор. Оцени и опиши фото как будто оно после улучшения."},
-                {"role": "user", "content": [{"type": "image_url", "image_url": file_path}]},
-            ],
-        )
-        result_text = response.choices[0].message.content
-
-        # Если фото бесплатное
-        if not user["free_used"]:
-            user["free_used"] = True
-            users[user_id] = user
-            save_users()
-
-            await update.message.reply_text(
-                "💎 Твоя первая обработка *абсолютно бесплатна!* 🩵\n\n"
-                f"Вот результат:\n\n{result_text}",
-                parse_mode="Markdown"
-            )
-
-        else:
-            # Красивое сообщение с предложением оплаты
-            pay_text = (
-                "🌌 *Магия вдохновения ждёт тебя снова...*\n\n"
-                "Твоё фото уже побывало в руках ИИ-творца, и теперь ты знаешь, как он видит красоту 💫\n\n"
-                "Хочешь, чтобы каждое новое изображение сияло совершенством?\n\n"
-                "👉 Получи *безлимитные улучшения* всего за 299₸.\n\n"
-                "Нажми ❤️ *«Разблокировать магию»* и отправь следующую фотографию!"
-            )
-
-            await update.message.reply_text(pay_text, parse_mode="Markdown")
-
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ Ошибка при обработке фото: {e}")
-
-# 🧩 Основной запуск
-def main():
-    print("✅ Бот с бесплатным фото и платным фотошопом запущен!")
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+# Запуск
+print("✅ Бот запущен и готов к магии!")
+bot.polling(none_stop=True)
