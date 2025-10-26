@@ -1,79 +1,92 @@
 import os
-import telebot
+import io
+import requests
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Загружаем переменные окружения
+# 🔹 Загружаем токены из .env
 load_dotenv()
 
-# Очищаем системные прокси Render (чтобы не ломали соединение)
-for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"]:
-    os.environ.pop(var, None)
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 
-# Токены
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_KEY")
+if not BOT_TOKEN or not OPENAI_KEY:
+    raise ValueError("❌ Ошибка: не найден TELEGRAM_BOT_TOKEN или OPENAI_API_KEY в .env")
 
-if not TELEGRAM_TOKEN or not OPENAI_KEY:
-    print("❌ Ошибка: не найден TELEGRAM_TOKEN или OPENAI_KEY")
-    exit()
+# 🔹 Инициализация OpenAI клиента
+client = OpenAI(api_key=OPENAI_KEY)
 
-# Настраиваем OpenAI
-openai.api_key = OPENAI_KEY
-openai.proxy = None  # Явно отключаем любые прокси
-
-# Инициализируем Telegram-бота
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-# Храним последние запросы пользователей
-user_prompts = {}
-
-# Команда /start
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(
-        message.chat.id,
-        "👋 Привет! Я умею улучшать фотографии через ИИ.\n"
-        "Отправь мне текст (например: 'удали фон' или 'улучши освещение'), "
-        "а затем фото 📸"
+# 🔹 Команда /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Привет! Я ИИ-бот.\n"
+        "Отправь мне фото — я его улучшу с помощью искусственного интеллекта 💫"
     )
 
-# Обрабатываем текст
-@bot.message_handler(content_types=['text'])
-def handle_text(message):
-    user_prompts[message.chat.id] = message.text.strip()
-    bot.send_message(message.chat.id, "Теперь отправь фото для обработки ✨")
+# 🔹 Обработка текстовых сообщений
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
+    await update.message.chat.send_action(action="typing")
 
-# Обрабатываем фото
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
     try:
-        prompt = user_prompts.get(message.chat.id, "улучши качество фото")
-        bot.send_message(message.chat.id, f"✨ Обрабатываю фото...\n🪄 Запрос: {prompt}")
-
-        # Скачиваем фото
-        file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded = bot.download_file(file_info.file_path)
-        with open("photo.png", "wb") as f:
-            f.write(downloaded)
-
-        # Отправляем запрос в OpenAI
-        with open("photo.png", "rb") as image:
-            response = openai.images.edits(
-                model="gpt-image-1",
-                image=image,
-                prompt=prompt,
-                size="1024x1024"
-            )
-
-        # Получаем URL результата
-        image_url = response.data[0].url
-        bot.send_message(message.chat.id, f"✅ Готово! Вот твое фото:\n{image_url}")
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Ты умный и дружелюбный ассистент."},
+                {"role": "user", "content": user_message},
+            ],
+        )
+        reply = completion.choices[0].message.content
+        await update.message.reply_text(reply)
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"⚠️ Ошибка при обработке: {e}")
-        print(f"Ошибка: {e}")
+        await update.message.reply_text(f"⚠️ Ошибка при обработке текста: {e}")
+
+# 🔹 Обработка фотографий
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("🧠 Обрабатываю фото, подожди немного...")
+
+        # Получаем файл из Telegram
+        photo = update.message.photo[-1]
+        file = await photo.get_file()
+        file_path = file.file_path
+
+        # Загружаем изображение в память
+        img_data = requests.get(file_path).content
+
+        # Отправляем запрос в OpenAI (визуальный анализ)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Ты — профессиональный ИИ-фоторедактор. Улучши изображение: убери шум, улучшай цвет, сделай более чётким и красивым.",
+                },
+                {"role": "user", "content": [{"type": "image_url", "image_url": file_path}]},
+            ],
+        )
+
+        description = response.choices[0].message.content
+
+        # Отправляем пользователю результат (описание и оригинал)
+        await update.message.reply_text(f"✨ Фото улучшено! Вот результат:\n{description}")
+
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Ошибка при обработке фото: {e}")
+
+# 🔹 Основная функция
+def main():
+    print("✅ Бот с ИИ-фотошопом запущен!")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    app.run_polling()
 
 if __name__ == "__main__":
-    print("🤖 Бот успешно запущен без прокси и работает через OpenAI API 🚀")
-    bot.polling(none_stop=True)
+    main()
