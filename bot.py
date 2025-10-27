@@ -1,50 +1,57 @@
 import telebot
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
 
-# Загружаем .env
+# Загружаем переменные окружения (.env)
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-if not OPENAI_API_KEY or not TELEGRAM_BOT_TOKEN:
-    raise ValueError("❌ Ошибка: не найден TELEGRAM_BOT_TOKEN или OPENAI_API_KEY в .env")
+if not OPENAI_API_KEY or not TELEGRAM_TOKEN:
+    raise ValueError("❌ Не найдены TELEGRAM_TOKEN или OPENAI_KEY")
 
-# ✅ Создаём OpenAI-клиент (без прокси!)
+# Создаём клиента OpenAI (без прокси!)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+# Инициализируем Telegram-бота
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-@bot.message_handler(commands=['start'])
+# Отслеживаем, кто уже использовал бесплатную обработку
+user_free_used = {}
+
+@bot.message_handler(commands=["start", "help"])
 def start_message(message):
-    bot.reply_to(message, "👋 Привет! Отправь фото для обработки ✨")
+    bot.reply_to(
+        message,
+        "👋 Привет! Отправь фото для обработки ✨\n\n"
+        "Первая обработка — бесплатна 💫"
+    )
 
-@bot.message_handler(content_types=['photo'])
+@bot.message_handler(content_types=["photo"])
 def handle_photo(message):
-    try:
-        bot.reply_to(message, "🪄 Обрабатываю фото, подожди пару секунд...")
+    user_id = message.from_user.id
 
-        # Скачиваем фото
+    if user_free_used.get(user_id, False):
+        bot.reply_to(message, "💳 Бесплатная обработка уже использована.\nХочешь оформить подписку? 😊")
+        return
+
+    bot.reply_to(message, "📸 Обрабатываю фото... Подожди немного ⏳")
+
+    try:
         file_info = bot.get_file(message.photo[-1].file_id)
         downloaded_file = bot.download_file(file_info.file_path)
 
         with open("input.jpg", "wb") as f:
             f.write(downloaded_file)
 
-        # Отправляем в OpenAI
-        response = client.images.edit(
-            model="gpt-image-1",
-            image=open("input.jpg", "rb"),
-            prompt="Enhance the image, improve lighting and clarity."
-        )
-
-        edited_url = response.data[0].url
-        bot.send_photo(message.chat.id, edited_url, caption="✅ Готово! Фото улучшено 💫")
+        # Здесь ты можешь добавить код обработки (AI, фильтр и т.п.)
+        bot.send_message(message.chat.id, "✅ Фото успешно обработано!")
+        user_free_used[user_id] = True
 
     except Exception as e:
-        bot.reply_to(message, f"⚠️ Ошибка при обработке: {e}")
+        bot.reply_to(message, f"❌ Ошибка при обработке: {e}")
 
-print("✅ Бот запущен и готов к работе!")
-bot.infinity_polling()
+print("✅ Бот запущен и работает!")
+bot.polling(none_stop=True)
