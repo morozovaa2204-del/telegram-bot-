@@ -1,83 +1,49 @@
-import os
 import telebot
+import os
 from openai import OpenAI
 from dotenv import load_dotenv
-from flask import Flask, request
 
-# === Загрузка переменных окружения ===
+# Загружаем переменные из .env
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
+# Проверяем, что ключи найдены
 if not TELEGRAM_TOKEN or not OPENAI_API_KEY:
-    raise ValueError("❌ Ошибка: не найден TELEGRAM_TOKEN или OPENAI_API_KEY в .env")
+    raise ValueError("Ошибка: не найден TELEGRAM_TOKEN или OPENAI_API_KEY в .env")
 
-# === Инициализация OpenAI без proxies ===
+# Инициализация клиентов
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# === Инициализация телеграм-бота ===
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
-app = Flask(__name__)
-
-free_photo_given = set()
-
+# Команда /start
 @bot.message_handler(commands=["start"])
 def start_message(message):
-    bot.reply_to(message, "👋 Привет! Отправь мне фото — я сделаю его волшебным ✨")
+    bot.send_message(message.chat.id, "👋 Привет! Я GPT-бот. Напиши мне сообщение, и я отвечу!")
 
-@bot.message_handler(content_types=["photo"])
-def handle_photo(message):
-    user_id = message.chat.id
-    if user_id not in free_photo_given:
-        bot.reply_to(message, "🎁 Твое первое фото бесплатно! 💫")
-        free_photo_given.add(user_id)
-        process_image(message)
-    else:
-        bot.reply_to(message, "🔒 Бесплатное фото уже использовано. Напиши админу, чтобы получить больше ✨")
-
-def process_image(message):
+# Обработка всех сообщений
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
     try:
-        file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        filename = f"image_{message.chat.id}.jpg"
-        with open(filename, "wb") as new_file:
-            new_file.write(downloaded_file)
+        user_message = message.text
 
-        bot.reply_to(message, "🪄 Обрабатываю фото, подожди немного...")
-
+        # Отправляем запрос в OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o-mini",  # или gpt-4-turbo, если есть доступ
             messages=[
-                {"role": "system", "content": "Ты — добрый помощник, создающий красивые описания к фото."},
-                {"role": "user", "content": "Создай вдохновляющее описание к красивому фото."}
-            ]
+                {"role": "system", "content": "Ты дружелюбный Telegram-бот-помощник."},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7
         )
 
-        description = response.choices[0].message.content
-        bot.reply_to(message, f"✨ {description}")
+        bot.reply_to(message, response.choices[0].message.content)
 
     except Exception as e:
-        bot.reply_to(message, f"⚠️ Ошибка при обработке фото: {e}")
+        bot.reply_to(message, f"⚠️ Ошибка: {e}")
 
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
-    bot.process_new_updates([update])
-    return "!", 200
-
-@app.route("/")
-def index():
-    return "🤖 Бот работает!", 200
-
+# Запуск бота
 if __name__ == "__main__":
-    if RENDER_EXTERNAL_URL:
-        webhook_url = f"{RENDER_EXTERNAL_URL}/{TELEGRAM_TOKEN}"
-        bot.remove_webhook()
-        bot.set_webhook(url=webhook_url)
-        print(f"✅ Вебхук установлен: {webhook_url}")
-        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-    else:
-        print("✅ Бот запущен локально!")
-        bot.infinity_polling()
+    print("✅ Бот запущен и готов к работе!")
+    bot.polling(none_stop=True)
