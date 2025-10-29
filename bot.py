@@ -3,47 +3,47 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Загружаем переменные из .env
+# Загружаем .env файл
 load_dotenv()
 
+# Получаем токены из переменных окружения
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Проверяем, что ключи найдены
 if not TELEGRAM_TOKEN or not OPENAI_API_KEY:
-    raise ValueError("Ошибка: не найден TELEGRAM_TOKEN или OPENAI_API_KEY в .env")
+    raise ValueError("Ошибка: отсутствует TELEGRAM_TOKEN или OPENAI_API_KEY в .env")
 
 # Инициализация клиентов
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Команда /start
-@bot.message_handler(commands=["start"])
-def start_message(message):
-    bot.send_message(message.chat.id, "👋 Привет! Я GPT-бот. Напиши мне сообщение, и я отвечу!")
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "👋 Привет! Я твой AI-помощник. Задай мне любой вопрос!")
 
-# Обработка всех сообщений
+# Основная логика ответов
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     try:
-        user_message = message.text
+        user_text = message.text.strip()
 
-        # Отправляем запрос в OpenAI
+        # Запрос к OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # или gpt-4-turbo, если есть доступ
+            model="gpt-4o-mini",  # компактная и быстрая модель
             messages=[
-                {"role": "system", "content": "Ты дружелюбный Telegram-бот-помощник."},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.7
+                {"role": "system", "content": "Ты дружелюбный помощник Telegram-бота."},
+                {"role": "user", "content": user_text},
+            ]
         )
 
-        bot.reply_to(message, response.choices[0].message.content)
+        ai_answer = response.choices[0].message.content
+        bot.reply_to(message, ai_answer)
 
     except Exception as e:
         bot.reply_to(message, f"⚠️ Ошибка: {e}")
 
-# Запуск бота
+# Запуск
 if __name__ == "__main__":
     print("✅ Бот запущен и готов к работе!")
     bot.polling(none_stop=True)
