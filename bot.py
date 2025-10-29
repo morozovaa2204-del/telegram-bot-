@@ -15,9 +15,7 @@ if not TELEGRAM_TOKEN or not OPENAI_API_KEY:
 
 # Инициализация клиентов
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-# Новый способ инициализации клиента OpenAI (без proxies)
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)  # без прокси!
 
 # Команда /start
 @bot.message_handler(commands=['start'])
@@ -30,11 +28,10 @@ def handle_message(message):
     try:
         user_text = message.text.strip()
 
-        # Запрос к OpenAI
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Ты дружелюбный помощник Telegram-бота."},
+                {"role": "system", "content": "Ты дружелюбный Telegram-помощник."},
                 {"role": "user", "content": user_text},
             ]
         )
