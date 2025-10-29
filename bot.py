@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # Загружаем .env файл
 load_dotenv()
 
-# Получаем токены из переменных окружения
+# Получаем токены
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -15,6 +15,8 @@ if not TELEGRAM_TOKEN or not OPENAI_API_KEY:
 
 # Инициализация клиентов
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+# Новый способ инициализации клиента OpenAI (без proxies)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Команда /start
@@ -30,7 +32,7 @@ def handle_message(message):
 
         # Запрос к OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # компактная и быстрая модель
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "Ты дружелюбный помощник Telegram-бота."},
                 {"role": "user", "content": user_text},
@@ -41,9 +43,9 @@ def handle_message(message):
         bot.reply_to(message, ai_answer)
 
     except Exception as e:
-        bot.reply_to(message, f"⚠️ Ошибка: {e}")
+        bot.reply_to(message, f"⚠️ Ошибка: {str(e)}")
 
 # Запуск
 if __name__ == "__main__":
-    print("✅ Бот запущен и готов к работе!")
+    print("✅ Бот успешно запущен на Render!")
     bot.polling(none_stop=True)
