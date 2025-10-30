@@ -51,7 +51,7 @@ def handle_message(message):
             image = client.images.generate(
                 model="gpt-image-1",
                 prompt=prompt,
-                size="512x512"
+                size="1024x1024"
             )
             image_url = image.data[0].url
             bot.send_photo(message.chat.id, image_url, caption="Вот твоё изображение 😊")
@@ -72,7 +72,7 @@ def handle_message(message):
     except Exception as e:
         bot.reply_to(message, f"⚠️ Ошибка: {str(e)}")
 
-# Запуск Flask-сервера (вместо bot.polling)
+# Запуск Flask-сервера
 if __name__ == "__main__":
     render_url = os.getenv("RENDER_EXTERNAL_URL")
     port = int(os.environ.get("PORT", 5000))
@@ -84,5 +84,4 @@ if __name__ == "__main__":
     else:
         print("⚠️ Переменная RENDER_EXTERNAL_URL не найдена")
 
-    # Важно! Flask теперь слушает порт, чтобы Render его 'увидел'
     app.run(host="0.0.0.0", port=port)
