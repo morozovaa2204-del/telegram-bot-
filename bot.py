@@ -1,6 +1,7 @@
 import telebot
 import os
 from openai import OpenAI
+from flask import Flask, request
 from dotenv import load_dotenv
 
 # Загружаем .env файл
@@ -16,20 +17,34 @@ if not TELEGRAM_TOKEN or not OPENAI_API_KEY:
 # Инициализация клиентов
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
+app = Flask(__name__)
 
-# Команда /start
+# Корневой маршрут для проверки
+@app.route('/')
+def home():
+    return "🤖 Бот работает через webhook!", 200
+
+# Маршрут для получения сообщений от Telegram
+@app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
+def webhook():
+    json_update = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_update)
+    bot.process_new_updates([update])
+    return '', 200
+
+# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "👋 Привет! Я твой AI-помощник. Задай мне вопрос или попроси сделать изображение!")
+    bot.reply_to(message, "👋 Привет! Я бот с искусственным интеллектом. Напиши что-нибудь или попроси создать фото!")
 
-# Основная логика ответов
+# Основная логика общения
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     try:
         user_text = message.text.strip().lower()
 
-        # Если пользователь просит фото — генерируем изображение
-        if "сделай фото" in user_text or "создай картинку" in user_text or "нарисуй" in user_text:
+        # Если пользователь просит фото
+        if any(word in user_text for word in ["сделай фото", "создай картинку", "нарисуй", "generate image"]):
             prompt = message.text
             bot.reply_to(message, "🎨 Создаю изображение, подожди немного...")
 
@@ -38,12 +53,11 @@ def handle_message(message):
                 prompt=prompt,
                 size="512x512"
             )
-
             image_url = image.data[0].url
-            bot.send_photo(message.chat.id, image_url, caption="Вот, что получилось 😊")
+            bot.send_photo(message.chat.id, image_url, caption="Вот твоё изображение 😊")
             return
 
-        # Иначе — обычный ответ чата
+        # Ответ от ChatGPT
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -58,7 +72,17 @@ def handle_message(message):
     except Exception as e:
         bot.reply_to(message, f"⚠️ Ошибка: {str(e)}")
 
-# Запуск
+# Запуск Flask-сервера (вместо bot.polling)
 if __name__ == "__main__":
-    print("✅ Бот успешно запущен на Render!")
-    bot.polling(none_stop=True)
+    render_url = os.getenv("RENDER_EXTERNAL_URL")
+    port = int(os.environ.get("PORT", 5000))
+
+    bot.remove_webhook()
+    if render_url:
+        bot.set_webhook(url=f"{render_url}/{TELEGRAM_TOKEN}")
+        print(f"✅ Webhook установлен: {render_url}/{TELEGRAM_TOKEN}")
+    else:
+        print("⚠️ Переменная RENDER_EXTERNAL_URL не найдена")
+
+    # Важно! Flask теперь слушает порт, чтобы Render его 'увидел'
+    app.run(host="0.0.0.0", port=port)
