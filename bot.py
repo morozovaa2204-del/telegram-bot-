@@ -15,23 +15,39 @@ if not TELEGRAM_TOKEN or not OPENAI_API_KEY:
 
 # Инициализация клиентов
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = OpenAI(api_key=OPENAI_API_KEY)  # без прокси!
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "👋 Привет! Я твой AI-помощник. Задай мне любой вопрос!")
+    bot.reply_to(message, "👋 Привет! Я твой AI-помощник. Задай мне вопрос или попроси сделать изображение!")
 
 # Основная логика ответов
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     try:
-        user_text = message.text.strip()
+        user_text = message.text.strip().lower()
 
+        # Если пользователь просит фото — генерируем изображение
+        if "сделай фото" in user_text or "создай картинку" in user_text or "нарисуй" in user_text:
+            prompt = message.text
+            bot.reply_to(message, "🎨 Создаю изображение, подожди немного...")
+
+            image = client.images.generate(
+                model="gpt-image-1",
+                prompt=prompt,
+                size="512x512"
+            )
+
+            image_url = image.data[0].url
+            bot.send_photo(message.chat.id, image_url, caption="Вот, что получилось 😊")
+            return
+
+        # Иначе — обычный ответ чата
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Ты дружелюбный Telegram-помощник."},
+                {"role": "system", "content": "Ты дружелюбный Telegram-ассистент."},
                 {"role": "user", "content": user_text},
             ]
         )
